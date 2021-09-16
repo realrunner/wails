@@ -2,11 +2,41 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/Masterminds/semver"
 )
+
+// findGoFilePath checks the current working directory and any parents for `filename`
+func findGoFilePath(filename string) (string, error) {
+	var err error
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	abswd, err := filepath.Abs(wd)
+	if err != nil {
+		return "", err
+	}
+	var paths = strings.Split(abswd, string(os.PathSeparator))
+	for {
+		path, err := filepath.Abs(string(os.PathSeparator) + filepath.Join(append(paths, []string{filename}...)...))
+		if err != nil {
+			return "", fmt.Errorf("unable to load go.mod at %s. %v", path, err)
+		}
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			if len(paths) == 0 {
+				return "", fmt.Errorf("unable to find go.mod")
+			}
+			paths = paths[:len(paths)-1]
+			continue
+		}
+		return path, nil
+	}
+}
 
 func GetWailsVersion() (*semver.Version, error) {
 	var FS = NewFSHelper()
@@ -14,9 +44,9 @@ func GetWailsVersion() (*semver.Version, error) {
 
 	// Load file
 	var err error
-	goModFile, err := filepath.Abs(filepath.Join(".", "go.mod"))
+	goModFile, err := findGoFilePath("go.mod")
 	if err != nil {
-		return nil, fmt.Errorf("Unable to load go.mod at %s", goModFile)
+		return nil, err
 	}
 	goMod, err := FS.LoadAsString(goModFile)
 	if err != nil {
